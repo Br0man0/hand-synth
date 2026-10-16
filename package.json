@@ -1,0 +1,14 @@
+{
+  "name": "hand-synth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synthétiseur web piloté par la main : MediaPipe HandLandmarker + Web Audio, sans build.",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes serve@14.2.4 -l 5173 .",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
