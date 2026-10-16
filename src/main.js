@@ -8,12 +8,13 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  app: $("app"), stage: $("stage"), video: $("video"), canvas: $("overlay"),
+  app: $("app"), video: $("video"), canvas: $("overlay"),
   start: $("start"), error: $("error"), status: $("status"),
   note: $("note"), detail: $("detail"), degrees: $("degrees"),
   fingers: $("fingers"), velocity: $("meter-velocity"),
   ledLeft: $("led-left"), ledRight: $("led-right"),
-  key: $("key"), mute: $("mute"),
+  keys: $("keys"), mute: $("mute"),
+  settings: $("settings"), settingsToggle: $("settings-toggle"),
 };
 
 const css = getComputedStyle(document.documentElement);
@@ -42,7 +43,17 @@ const ERRORS = {
 };
 
 const FINGER_NAMES = { thumb: "pouce", index: "index", middle: "majeur", ring: "annulaire", pinky: "auriculaire" };
-const GESTURES = ["1 doigt", "2 doigts", "3 doigts", "4 doigts", "5 doigts", "index et auriculaire", "index, auriculaire et pouce"];
+
+/** Doigts à lever pour chaque degré (option R3), dans l'ordre pouce → auriculaire. */
+const DEGREE_SHAPES = [
+  { label: "1 doigt", up: ["index"] },
+  { label: "2 doigts", up: ["index", "middle"] },
+  { label: "3 doigts", up: ["index", "middle", "ring"] },
+  { label: "4 doigts", up: ["index", "middle", "ring", "pinky"] },
+  { label: "5 doigts", up: FINGERS },
+  { label: "Index et auriculaire", up: ["index", "pinky"] },
+  { label: "Index, auriculaire et pouce", up: ["thumb", "index", "pinky"] },
+];
 
 // ---------- Démarrage ----------
 
@@ -52,10 +63,7 @@ el.start.addEventListener("click", async () => {
   try {
     el.start.textContent = "Ouverture de la caméra…";
     await synth.start(); // dans le geste utilisateur : requis pour l'audio
-    // Sur petit écran, les réglages sont repliés pour laisser la place à la vidéo.
-if (matchMedia("(max-width: 560px)").matches) $("settings").open = false;
-
-applyControls();
+    applyControls();
     const stream = await startCamera(el.video);
     stream.getVideoTracks()[0]?.addEventListener("ended", onCameraLost);
     el.start.textContent = "Chargement du suivi des mains…";
@@ -112,7 +120,8 @@ function render(frame, hands) {
     (v) => (el.note.dataset.state = v));
   const detail =
     playing !== null ? `${ROMANS[degreeOf(playing) - 1] ?? ""}, ${Math.round(freqFromMidi(playing))} Hz`
-    : selected !== null ? `${ROMANS[degree - 1]} prêt, ferme le poing gauche`
+    : selected !== null
+      ? mode === "auto" ? `${ROMANS[degree - 1]} prêt` : `${ROMANS[degree - 1]} prêt, ferme le poing gauche`
     : "Silence";
   setIfChanged("detail", detail, (v) => (el.detail.textContent = v));
 
@@ -125,21 +134,24 @@ function render(frame, hands) {
   const fingerKey = rightFingers ? FINGERS.map((f) => (rightFingers[f] ? 1 : 0)).join("") : "";
   setIfChanged("fingers", fingerKey, () => {
     const up = rightFingers ? FINGERS.filter((f) => rightFingers[f]) : [];
-    for (const span of el.fingers.children) span.dataset.on = up.includes(span.dataset.finger);
+    for (const bar of el.fingers.children) bar.dataset.on = up.includes(bar.dataset.finger);
     el.fingers.setAttribute("aria-label",
       `Doigts tendus : ${up.length ? up.map((f) => FINGER_NAMES[f]).join(", ") : "aucun"}`);
   });
 
-  const leftText = hands.left ? (leftClosed ? "Main gauche : poing fermé" : "Main gauche : ouverte")
-    : mode === "auto" ? "Sans main gauche : jeu à une main" : "Main gauche absente";
-  setIfChanged("ledL", leftText, (v) => {
-    el.ledLeft.textContent = v;
-    el.ledLeft.dataset.on = !!hands.left;
-  });
-  setIfChanged("ledR", !!hands.right, (v) => {
-    el.ledRight.textContent = v ? "Main droite détectée" : "Main droite absente";
-    el.ledRight.dataset.on = v;
-  });
+  const left =
+    hands.left ? (leftClosed ? ["Main gauche : poing fermé", "Poing fermé"] : ["Main gauche : ouverte", "Ouverte"])
+    : mode === "auto" ? ["Sans main gauche : jeu à une main", "Une main"]
+    : ["Main gauche absente", "Gauche"];
+  setIfChanged("ledL", left.join("|"), () => setLed(el.ledLeft, !!hands.left, left));
+  const right = hands.right ? ["Main droite détectée", "Droite"] : ["Main droite absente", "Droite"];
+  setIfChanged("ledR", !!hands.right, (on) => setLed(el.ledRight, on, right));
+}
+
+function setLed(led, on, [long, short]) {
+  led.dataset.on = on;
+  led.querySelector(".led__long").textContent = long;
+  led.querySelector(".led__short").textContent = short;
 }
 
 /** Degré (1–7) d'une note jouée dans la tonalité courante. */
@@ -159,17 +171,27 @@ function setMeter(meter, value, text) {
   meter.querySelector(".meter__value").textContent = text;
 }
 
-/** Guide des 7 degrés : chiffre romain, note dans la tonalité, geste. */
+/** Touches des 7 degrés : chiffre romain, note dans la tonalité, glyphe des doigts à lever. */
 function renderDegrees() {
   el.degrees.replaceChildren(
     ...ROMANS.map((roman, i) => {
       const li = document.createElement("li");
       li.className = "degree";
       li.dataset.degree = i + 1;
-      li.innerHTML = `<span class="degree__roman"></span><span class="degree__note"></span><span class="degree__gesture"></span>`;
-      li.children[0].textContent = roman;
-      li.children[1].textContent = noteName(degreeToMidi(i + 1, state.key));
-      li.children[2].textContent = GESTURES[i];
+      const r = Object.assign(document.createElement("span"), { className: "degree__roman", textContent: roman });
+      const n = Object.assign(document.createElement("span"), {
+        className: "degree__note",
+        textContent: noteName(degreeToMidi(i + 1, state.key)),
+      });
+      const glyph = Object.assign(document.createElement("span"), { className: "glyph" });
+      glyph.setAttribute("role", "img");
+      glyph.setAttribute("aria-label", DEGREE_SHAPES[i].label);
+      for (const f of FINGERS) {
+        const bar = document.createElement("i");
+        bar.dataset.on = DEGREE_SHAPES[i].up.includes(f);
+        glyph.append(bar);
+      }
+      li.append(r, n, glyph);
       return li;
     }),
   );
@@ -204,13 +226,18 @@ document.addEventListener("visibilitychange", () => {
 // ---------- Contrôles ----------
 
 for (let pc = 0; pc < 12; pc++) {
-  el.key.append(new Option(pitchClassName(pc), pc, pc === 0, pc === 0));
+  const label = document.createElement("label");
+  const input = Object.assign(document.createElement("input"), {
+    type: "radio", name: "key", value: pc, checked: pc === 0,
+  });
+  label.append(input, Object.assign(document.createElement("span"), { textContent: pitchClassName(pc) }));
+  el.keys.append(label);
 }
 
 function readControls() {
   const checked = (name) => document.querySelector(`input[name="${name}"]:checked`).value;
   state.key = {
-    root: Number(el.key.value),
+    root: Number(checked("key")),
     scale: SCALES[checked("scale")],
     octave: Number(checked("octave")),
   };
@@ -226,22 +253,30 @@ function applyControls() {
   renderDegrees();
 }
 
-el.key.addEventListener("change", applyControls);
-document.querySelectorAll(".panel input[type=radio]").forEach((input) =>
-  input.addEventListener("change", applyControls));
+el.settings.addEventListener("change", applyControls);
+
+function setSettingsOpen(open) {
+  el.settings.hidden = !open;
+  el.settingsToggle.setAttribute("aria-expanded", open);
+  if (open) el.settings.querySelector("input:checked")?.focus({ preventScroll: true });
+}
+el.settingsToggle.addEventListener("click", () => setSettingsOpen(el.settings.hidden));
 
 function toggleMute() {
   const muted = synth.toggleMute();
   el.mute.setAttribute("aria-pressed", muted);
-  el.mute.textContent = muted ? "Rétablir le son" : "Couper le son";
+  el.mute.setAttribute("aria-label", muted ? "Rétablir le son" : "Couper le son");
 }
 el.mute.addEventListener("click", toggleMute);
-document.addEventListener("keydown", (e) => {
-  if (e.target.closest?.("select")) return;
-  if (e.key.toLowerCase() === "m" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleMute();
-});
 
-// Sur petit écran, les réglages sont repliés pour laisser la place à la vidéo.
-if (matchMedia("(max-width: 560px)").matches) $("settings").open = false;
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  if (e.key === "Escape" && !el.settings.hidden) {
+    setSettingsOpen(false);
+    el.settingsToggle.focus();
+  } else if (e.key.toLowerCase() === "m" && el.app.dataset.state === "playing") {
+    toggleMute();
+  }
+});
 
 applyControls();

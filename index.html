@@ -2,9 +2,10 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Hand Synth</title>
   <meta name="description" content="Un synthétiseur dont on joue avec les mains devant la webcam. Tout tourne dans le navigateur." />
+  <meta name="theme-color" content="#1e2328" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,11 +15,13 @@
 </head>
 <body>
   <main class="app" id="app" data-state="idle">
-    <section class="stage" id="stage" aria-label="Caméra">
-      <video id="video" class="stage__media" playsinline muted aria-hidden="true"></video>
-      <canvas id="overlay" class="stage__media" aria-hidden="true"></canvas>
+    <!-- Caméra plein écran, squelettes par-dessus -->
+    <video id="video" class="stage" playsinline muted aria-hidden="true"></video>
+    <canvas id="overlay" class="stage" aria-hidden="true"></canvas>
 
-      <div class="gate" id="gate">
+    <!-- Écran d'accueil -->
+    <div class="gate" id="gate">
+      <div class="gate__card glass">
         <h1 class="gate__title">Hand Synth</h1>
         <p class="gate__lead">Choisis la note avec les doigts de la main droite, joue-la en fermant le poing gauche.</p>
         <dl class="gate__map">
@@ -32,74 +35,102 @@
           </div>
         </dl>
         <p class="gate__hint">Sans main gauche, la note change dès que tu changes de doigts, et le poing droit la coupe.</p>
-        <button class="key key--primary" id="start" type="button">Démarrer</button>
+        <button class="btn-primary" id="start" type="button">Démarrer</button>
         <p class="gate__note">La vidéo est analysée sur ton appareil. Elle n'est envoyée nulle part.</p>
         <p class="gate__error" id="error" role="alert" hidden></p>
       </div>
-    </section>
+    </div>
 
-    <section class="panel" aria-label="Commandes">
-      <ol class="degrees" id="degrees" aria-label="Degrés de la gamme"></ol>
-
-      <div class="panel__zone readout" aria-live="off">
-        <span class="readout__note" id="note">—</span>
-        <span class="readout__detail" id="detail">Silence</span>
-      </div>
-
-      <div class="panel__zone panel__zone--hands">
-        <div class="fingers-row">
-          <span class="fingers" id="fingers" role="img" aria-label="Doigts tendus : aucun">
-            <span data-finger="thumb"></span><span data-finger="index"></span><span data-finger="middle"></span><span data-finger="ring"></span><span data-finger="pinky"></span>
-          </span>
-          <span class="fingers__label">Doigts de la main droite</span>
-        </div>
-        <div class="meter meter--left" id="meter-velocity" role="meter" aria-label="Vélocité"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 %">
-          <span class="meter__label">Vélocité</span>
-          <span class="meter__bar"><span class="meter__fill"></span></span>
-          <span class="meter__value">0 %</span>
-        </div>
-        <ul class="hands" aria-label="Mains détectées">
-          <li class="hand-led hand-led--left" id="led-left" data-on="false">Main gauche absente</li>
-          <li class="hand-led hand-led--right" id="led-right" data-on="false">Main droite absente</li>
+    <!-- Interface de jeu : éléments flottants en verre -->
+    <div class="hud" id="hud">
+      <header class="status glass">
+        <span class="status__brand">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 32 32"><path d="M4 20 Q10 4 16 16 T28 12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="24" cy="24" r="4" fill="#F2B705"/><circle cx="8" cy="8" r="3" fill="#5C78FF"/></svg>
+          <span class="status__name">Hand Synth</span>
+        </span>
+        <span class="status__sep" aria-hidden="true"></span>
+        <ul class="status__hands" aria-label="Mains détectées">
+          <li class="led led--left" id="led-left" data-on="false"><span class="led__long">Main gauche absente</span><span class="led__short">Gauche</span></li>
+          <li class="led led--right" id="led-right" data-on="false"><span class="led__long">Main droite absente</span><span class="led__short">Droite</span></li>
         </ul>
+      </header>
+
+      <div class="actions">
+        <button class="round glass" id="mute" type="button" aria-pressed="false" aria-label="Couper le son" aria-keyshortcuts="M">
+          <svg class="icon-on" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+          <svg class="icon-off" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></svg>
+        </button>
+        <button class="round glass" id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings" aria-label="Réglages">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+        </button>
       </div>
 
-      <details class="panel__zone settings" id="settings" open>
-        <summary class="settings__summary">Réglages</summary>
-        <div class="settings__body">
-        <div class="control">
-          <label class="control__label" for="key">Tonalité</label>
-          <select class="select" id="key"></select>
+      <aside class="sheet glass" id="settings" aria-label="Réglages" hidden>
+        <h2 class="sheet__title">Réglages</h2>
+        <fieldset class="field">
+          <legend class="field__label">Tonalité</legend>
+          <div class="chips" id="keys"></div>
+        </fieldset>
+        <div class="field-row">
+          <fieldset class="field">
+            <legend class="field__label">Gamme</legend>
+            <div class="seg">
+              <label><input type="radio" name="scale" value="major" checked /><span>Majeur</span></label>
+              <label><input type="radio" name="scale" value="minor" /><span>Mineur</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="field">
+            <legend class="field__label">Octave</legend>
+            <div class="seg">
+              <label><input type="radio" name="octave" value="2" /><span>2</span></label>
+              <label><input type="radio" name="octave" value="3" checked /><span>3</span></label>
+              <label><input type="radio" name="octave" value="4" /><span>4</span></label>
+              <label><input type="radio" name="octave" value="5" /><span>5</span></label>
+            </div>
+          </fieldset>
         </div>
-        <fieldset class="segmented">
-          <legend>Gamme</legend>
-          <label><input type="radio" name="scale" value="major" checked /><span>Majeur</span></label>
-          <label><input type="radio" name="scale" value="minor" /><span>Mineur</span></label>
+        <fieldset class="field">
+          <legend class="field__label">Forme d'onde</legend>
+          <div class="seg">
+            <label><input type="radio" name="wave" value="sawtooth" checked /><span>Dent de scie</span></label>
+            <label><input type="radio" name="wave" value="square" /><span>Carré</span></label>
+            <label><input type="radio" name="wave" value="triangle" /><span>Triangle</span></label>
+          </div>
         </fieldset>
-        <fieldset class="segmented">
-          <legend>Octave</legend>
-          <label><input type="radio" name="octave" value="2" /><span>2</span></label>
-          <label><input type="radio" name="octave" value="3" checked /><span>3</span></label>
-          <label><input type="radio" name="octave" value="4" /><span>4</span></label>
-          <label><input type="radio" name="octave" value="5" /><span>5</span></label>
+        <fieldset class="field">
+          <legend class="field__label">Effets</legend>
+          <div class="seg">
+            <label><input type="radio" name="fx" value="dry" /><span>Sec</span></label>
+            <label><input type="radio" name="fx" value="reverb" checked /><span>Réverb</span></label>
+            <label><input type="radio" name="fx" value="space" /><span>Réverb et delay</span></label>
+          </div>
         </fieldset>
-        <fieldset class="segmented">
-          <legend>Forme d'onde</legend>
-          <label><input type="radio" name="wave" value="sawtooth" checked /><span>Dent de scie</span></label>
-          <label><input type="radio" name="wave" value="square" /><span>Carré</span></label>
-          <label><input type="radio" name="wave" value="triangle" /><span>Triangle</span></label>
-        </fieldset>
-        <fieldset class="segmented">
-          <legend>Effets</legend>
-          <label><input type="radio" name="fx" value="dry" /><span>Sec</span></label>
-          <label><input type="radio" name="fx" value="reverb" checked /><span>Réverb</span></label>
-          <label><input type="radio" name="fx" value="space" /><span>Réverb et delay</span></label>
-        </fieldset>
-        <button class="key key--toggle" id="mute" type="button" aria-pressed="false" aria-keyshortcuts="M">Couper le son</button>
+        <p class="sheet__foot">Touche M : couper ou rétablir le son.</p>
+      </aside>
+
+      <section class="dock glass" aria-label="Instrument">
+        <div class="readout" aria-live="off">
+          <span class="readout__note" id="note" data-state="idle">—</span>
+          <span class="readout__detail" id="detail">Silence</span>
         </div>
-      </details>
-    </section>
+
+        <ol class="degrees" id="degrees" aria-label="Degrés de la gamme"></ol>
+
+        <div class="dock__side">
+          <div class="fingers-row">
+            <span class="fingers" id="fingers" role="img" aria-label="Doigts tendus : aucun">
+              <i data-finger="thumb"></i><i data-finger="index"></i><i data-finger="middle"></i><i data-finger="ring"></i><i data-finger="pinky"></i>
+            </span>
+            <span class="fingers__label">Main<br />droite</span>
+          </div>
+          <div class="meter" id="meter-velocity" role="meter" aria-label="Vélocité"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 %">
+            <span class="meter__head"><span>Vélocité</span><span class="meter__value">0 %</span></span>
+            <span class="meter__bar"><span class="meter__fill"></span></span>
+          </div>
+        </div>
+      </section>
+    </div>
   </main>
   <p class="sr-only" id="status" aria-live="polite"></p>
 </body>

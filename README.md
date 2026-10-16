@@ -25,9 +25,11 @@ pour le son. Il n'y a pas de serveur et la vidéo ne quitte pas l'appareil.
 **Sans main gauche visible**, chaque changement de doigts joue la note et le
 poing droit la relâche. La touche **M** coupe ou rétablit le son.
 
-Dans la façade, on peut régler la tonalité, la gamme (majeure ou mineure),
-l'octave (2 à 5), la forme d'onde et les effets (sec, réverb, ou réverb et
-delay).
+La caméra occupe tout l'écran. L'interface flotte par-dessus en verre
+dépoli : une barre d'état, un dock avec la note, les 7 degrés (chacun montre
+les doigts à lever), les doigts détectés et la vélocité. Le bouton Réglages,
+en haut à droite, ouvre la tonalité, la gamme (majeure ou mineure), l'octave
+(2 à 5), la forme d'onde et les effets (sec, réverb, ou réverb et delay).
 
 ## Le son
 
@@ -71,8 +73,8 @@ index.html ── styles.css
 
 Les décisions sont documentées dans
 [ADR-0001 (stack navigateur)](docs/adr/0001-stack-navigateur.md) et
-[ADR-0002 (doigts et poing)](docs/adr/0002-doigts-et-poing.md). Les tokens et
-composants d'interface sont décrits dans
+[ADR-0002 (doigts et poing)](docs/adr/0002-doigts-et-poing.md). Le matériau verre,
+les tokens et les composants d'interface sont décrits dans
 [`docs/design-system.md`](docs/design-system.md).
 
 ## Où modifier quoi
@@ -84,6 +86,7 @@ composants d'interface sont décrits dans
 | Modifier le son (enveloppes, désaccord, effets) | `PATCH` dans `src/synth.js` |
 | Ajouter une gamme | `SCALES` dans `src/mapping.js`, plus une option dans `index.html` |
 | Brancher son propre modèle (ONNX) | `createHandTracker()` dans `src/vision.js` |
+| Rendre le verre plus ou moins transparent | `--glass-tint` dans `styles.css` |
 
 ## Déploiement
 
