@@ -56,6 +56,33 @@ export function createOverlay(canvas, colors) {
     ctx.stroke();
   }
 
+  /**
+   * Distorsion : arc autour du poignet entre la verticale et l'axe de la main,
+   * d'autant plus opaque que la distorsion est forte.
+   */
+  function rollGauge(lm, amount, color) {
+    const [wx, wy] = px(lm[0]);
+    const [mx, my] = px(lm[9]);
+    const r = Math.hypot(mx - wx, my - wy) * 0.75;
+    const up = -Math.PI / 2;
+    const axis = Math.atan2(my - wy, mx - wx);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.65 * amount;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = unit() * 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(wx, wy, r, Math.min(up, axis), Math.max(up, axis));
+    ctx.stroke();
+    ctx.setLineDash([unit() * 2, unit() * 3]);
+    ctx.lineWidth = unit();
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.lineTo(wx, wy - r * 1.15);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   return {
     resize,
     /** frame : état renvoyé par le performer (doigts tendus, poing fermé). */
@@ -63,6 +90,7 @@ export function createOverlay(canvas, colors) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (right) {
         skeleton(right, colors.right);
+        if (frame.drive > 0.01) rollGauge(right, frame.drive, colors.right);
         // Bouts des doigts tendus : ce sont eux qui choisissent la note.
         for (const [name, i] of Object.entries(TIPS)) {
           if (frame.rightFingers?.[name]) ring(right[i], unit() * 5, colors.right, false);

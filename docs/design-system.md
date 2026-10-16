@@ -12,9 +12,9 @@ une fenêtre ou un mur clair.
    (`.hud { pointer-events: none }`, réactivé sur ses enfants directs). Les
    réglages sont repliés par défaut.
 2. **Une couleur par main.** Le cobalt correspond à la main gauche
-   (déclencheur, vélocité), le jaune signal à la main droite (choix de la
-   note). Ces couleurs servent aux squelettes, aux témoins, aux doigts, à la
-   vélocité et aux états des degrés. Elles ne servent jamais à décorer.
+   (déclencheur, volume), le jaune signal à la main droite (choix de la
+   note). Ces couleurs servent aux squelettes, aux témoins, aux doigts, aux
+   jauges et aux états des degrés. Elles ne servent jamais à décorer.
 3. **Un seul élément fort.** La note jouée s'affiche en très grand, en Archivo
    étendu, et la touche du degré qui sonne devient jaune pleine. Tout le reste
    reste sobre.
@@ -104,7 +104,8 @@ C'est le verre principal, centré en bas. Il contient trois zones :
 3. **Côté** (`.dock__side`) :
    - les témoins des doigts (`.fingers`), 5 barres qui dessinent une main,
      jaunes et lumineuses quand le doigt est tendu ;
-   - la jauge de vélocité (`.meter`), cobalt et lumineuse.
+   - deux jauges (`.meter`) : **Volume** en cobalt (main gauche, poing fermé)
+     et **Distorsion** en jaune (rotation du poignet droit).
 
 Sur mobile, le dock passe en grille : la lecture et le côté sur une ligne,
 puis les 7 degrés sur la ligne suivante (58 px de haut, sans glyphe).
@@ -115,7 +116,9 @@ couleurs des mains. Le bouton Démarrer est une pilule jaune.
 
 ### Superposition vidéo
 - Main droite : le squelette est jaune, avec un anneau sur le bout de chaque
-  doigt tendu.
+  doigt tendu. Quand la distorsion est active, un arc part du poignet et va
+  de la verticale (en pointillés) jusqu'à l'axe de la main. Il est d'autant
+  plus opaque que la distorsion est forte.
 - Main gauche : le squelette est cobalt, avec un disque sur la paume, plein
   quand le poing est fermé et vide sinon.
 
@@ -126,7 +129,7 @@ couleurs des mains. Le bouton Démarrer est une pilule jaune.
 - Les éléments qui ne sont que des icônes ont un `aria-label`.
 - Les glyphes et les témoins des doigts ont `role="img"` et un libellé
   textuel.
-- La jauge de vélocité porte `role="meter"`.
+- Les jauges de volume et de distorsion portent `role="meter"`.
 - Les changements de note ne sont pas annoncés (`aria-live="off"`), parce
   qu'il y en a trop. Seul le démarrage est annoncé.
 - Les états ne passent jamais par la couleur seule : texte, remplissage et

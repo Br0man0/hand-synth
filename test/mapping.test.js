@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   SCALES, heightInZone, noteName, fingerStates, degreeFromFingers, degreeToMidi,
   velocityFromHeight, createStabilizer, createFistDetector, assignHands, freqFromMidi,
+  handRoll, driveFromRoll, volumeFromHeight, createSmoother,
 } from "../src/mapping.js";
 import { makeHand, shape } from "./fixtures/hand.js";
 
@@ -90,4 +91,41 @@ test("assignHands : côté à l'écran, vidéo miroir", () => {
   assert.deepEqual(assignHands([a]), { left: null, right: a });
   assert.deepEqual(assignHands([b]), { left: b, right: null });
   assert.deepEqual(assignHands([]), { left: null, right: null });
+});
+
+test("handRoll : ~0° main droite verticale, suit l'inclinaison", () => {
+  assert.ok(Math.abs(handRoll(makeHand())) < 10);
+  const tilted = handRoll(makeHand({ tilt: Math.PI / 4 }));
+  const other = handRoll(makeHand({ tilt: -Math.PI / 4 }));
+  assert.ok(Math.abs(Math.abs(tilted) - 45) < 10, `${tilted}`);
+  assert.ok(Math.sign(tilted) !== Math.sign(other));
+});
+
+test("driveFromRoll : zone morte, saturation, symétrique", () => {
+  assert.equal(driveFromRoll(10), 0);
+  assert.equal(driveFromRoll(-10), 0);
+  near(driveFromRoll(37.5), 0.5);
+  near(driveFromRoll(-37.5), 0.5);
+  assert.equal(driveFromRoll(90), 1);
+});
+
+test("fingerStates : la rotation qui pilote la distorsion ne change pas la note (±60°)", () => {
+  for (const tilt of [-Math.PI / 3, Math.PI / 3]) {
+    const f = fingerStates(makeHand({ fingers: shape("index", "pinky"), tilt }));
+    assert.equal(degreeFromFingers(f), 6);
+  }
+});
+
+test("volumeFromHeight : 0 en bas, 1 en haut", () => {
+  near(volumeFromHeight(0.85), 0);
+  near(volumeFromHeight(0.15), 1);
+  near(volumeFromHeight(0.5), 0.5);
+});
+
+test("createSmoother : converge et reset", () => {
+  const s = createSmoother(0.5);
+  assert.equal(s(0), 0);
+  assert.equal(s(1), 0.5);
+  assert.equal(s.reset(0.2), 0.2);
+  assert.equal(s(0.2), 0.2);
 });

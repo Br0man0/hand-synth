@@ -674,7 +674,7 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 14px;
+  gap: 8px;
   width: 190px;
   padding: 0 14px 0 20px;
   border-left: 1px solid rgb(255 255 255 / 0.14);
@@ -727,7 +727,7 @@ button {
 .meter__head {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 13px;
   font-weight: 600;
   font-variation-settings: "wdth" 90;
@@ -740,7 +740,7 @@ button {
 
 .meter__bar {
   display: block;
-  height: 8px;
+  height: 6px;
   border-radius: 4px;
   background: var(--track);
   overflow: hidden;
@@ -754,6 +754,12 @@ button {
   background: var(--hand-left);
   box-shadow: 0 0 12px rgb(92 120 255 / 0.8);
   transition: width var(--dur-fast) linear;
+}
+
+/* Distorsion : pilotée par la main droite, donc jaune */
+.meter--right .meter__fill {
+  background: var(--hand-right);
+  box-shadow: 0 0 12px rgb(242 183 5 / 0.7);
 }
 
 /* ---------- Écrans moyens : dock plus serré ---------- */
@@ -834,6 +840,7 @@ button {
     grid-area: readout;
     width: auto;
     flex-direction: row;
+    justify-content: flex-start;
     align-items: baseline;
     gap: 10px;
     padding: 0 6px;
@@ -871,7 +878,17 @@ button {
     display: none;
   }
   .meter {
-    width: 72px;
+    width: 84px;
+  }
+  /* Doigts à gauche, les deux jauges empilées à droite */
+  .dock__side {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    row-gap: 4px;
+  }
+  .fingers-row {
+    grid-row: span 2;
   }
   .meter__head {
     font-size: 11px;

@@ -27,11 +27,11 @@
         <dl class="gate__map">
           <div class="gate__row gate__row--right">
             <dt>Main droite</dt>
-            <dd>1 à 5 doigts tendus : degrés I à V. Index et auriculaire : VI. Ajoute le pouce : VII.</dd>
+            <dd>1 à 5 doigts tendus : degrés I à V. Index et auriculaire : VI. Ajoute le pouce : VII. Tourne le poignet pour ajouter de la distorsion.</dd>
           </div>
           <div class="gate__row gate__row--left">
             <dt>Main gauche</dt>
-            <dd>Ferme le poing pour jouer, ouvre-le pour relâcher. Plus la main est haute, plus la note est forte.</dd>
+            <dd>Ferme le poing pour jouer, ouvre-le pour relâcher. Poing fermé, monte ou descends la main pour changer le volume.</dd>
           </div>
         </dl>
         <p class="gate__hint">Sans main gauche, la note change dès que tu changes de doigts, et le poing droit la coupe.</p>
@@ -123,9 +123,14 @@
             </span>
             <span class="fingers__label">Main<br />droite</span>
           </div>
-          <div class="meter" id="meter-velocity" role="meter" aria-label="Vélocité"
+          <div class="meter meter--left" id="meter-volume" role="meter" aria-label="Volume, main gauche"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="80" aria-valuetext="80 %">
+            <span class="meter__head"><span>Volume</span><span class="meter__value">80 %</span></span>
+            <span class="meter__bar"><span class="meter__fill"></span></span>
+          </div>
+          <div class="meter meter--right" id="meter-drive" role="meter" aria-label="Distorsion, poignet droit"
                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 %">
-            <span class="meter__head"><span>Vélocité</span><span class="meter__value">0 %</span></span>
+            <span class="meter__head"><span>Distorsion</span><span class="meter__value">0 %</span></span>
             <span class="meter__bar"><span class="meter__fill"></span></span>
           </div>
         </div>

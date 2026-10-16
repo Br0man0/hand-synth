@@ -85,3 +85,67 @@ test("Une main : chaque degré stable joue, le poing relâche, les formes de pas
   ]);
   assert.deepEqual(events, ["on C4", "on E4", "off"]);
 });
+
+/** Main gauche fermée à la hauteur y (et ouverte si closed = false). */
+const Lc = (cy) => L(true, cy);
+
+test("Volume : poing fermé, monter ou descendre la main change le volume pendant la note", () => {
+  const perf = createPerformer();
+  run([[200, { left: L(false, 0.5), right: R("index") }], [100, { left: Lc(0.5), right: R("index") }]], perf);
+  const mid = run([[100, { left: Lc(0.5), right: R("index") }]], perf).last;
+  const high = run([[300, { left: Lc(0.2), right: R("index") }]], perf).last;
+  const low = run([[300, { left: Lc(0.8), right: R("index") }]], perf).last;
+  assert.equal(mid.playing, 60);
+  assert.equal(high.playing, 60, "la note continue pendant le geste");
+  assert.equal(low.playing, 60);
+  assert.ok(Math.abs(mid.volume - 0.5) < 0.05, `mid ${mid.volume}`);
+  assert.ok(high.volume > 0.9 && low.volume < 0.1, `${high.volume} / ${low.volume}`);
+});
+
+test("Volume : en glissant, aucune note relancée ni coupée", () => {
+  const ys = [0.5, 0.45, 0.4, 0.35, 0.3, 0.35, 0.45, 0.55, 0.65, 0.75];
+  const { events } = run([
+    [200, { left: L(false), right: R("index") }],
+    [100, { left: Lc(0.5), right: R("index") }],
+    ...ys.map((y) => [40, { left: Lc(y), right: R("index") }]),
+  ]);
+  assert.deepEqual(events, ["on C4"]);
+});
+
+test("Main gauche perdue 400 ms (flou de bougé) : la note tient", () => {
+  const { events } = run([
+    [200, { left: L(false), right: R("index") }],
+    [100, { left: Lc(0.5), right: R("index") }],
+    [400, { right: R("index") }],
+    [100, { left: Lc(0.4), right: R("index") }],
+  ]);
+  assert.deepEqual(events, ["on C4"]);
+});
+
+test("Main gauche retirée : relâche, et pas de note jouée d'office en mode une main", () => {
+  const { events } = run([
+    [200, { left: L(false), right: R("index") }],
+    [100, { left: Lc(0.5), right: R("index") }],
+    [800, { right: R("index") }], // main gauche partie : relâche, puis mode une main
+    [200, { right: R("index", "middle") }], // il faut changer de doigts pour jouer
+  ]);
+  assert.deepEqual(events, ["on C4", "off", "on D4"]);
+});
+
+test("Poing fermé avant de choisir la note : la note part dès qu'elle est choisie", () => {
+  const { events } = run([
+    [200, { left: L(false), right: R() }],
+    [100, { left: Lc(0.5), right: R() }], // poing, aucune note
+    [200, { left: Lc(0.5), right: R("index", "middle", "ring") }],
+  ]);
+  assert.deepEqual(events, ["on E4"]);
+});
+
+test("Distorsion : suit la rotation du poignet droit, sans changer la note", () => {
+  const perf = createPerformer();
+  const straight = run([[200, { right: makeHand({ cx: 0.25, fingers: shape("index") }) }]], perf).last;
+  const turned = run([[300, { right: makeHand({ cx: 0.25, fingers: shape("index"), tilt: Math.PI / 3 }) }]], perf).last;
+  assert.ok(straight.drive < 0.05, `${straight.drive}`);
+  assert.ok(turned.drive > 0.75, `${turned.drive}`); // ~52° de rotation effective
+  assert.equal(turned.playing, straight.playing);
+});

@@ -11,7 +11,7 @@ const el = {
   app: $("app"), video: $("video"), canvas: $("overlay"),
   start: $("start"), error: $("error"), status: $("status"),
   note: $("note"), detail: $("detail"), degrees: $("degrees"),
-  fingers: $("fingers"), velocity: $("meter-velocity"),
+  fingers: $("fingers"), volume: $("meter-volume"), drive: $("meter-drive"),
   ledLeft: $("led-left"), ledRight: $("led-right"),
   keys: $("keys"), mute: $("mute"),
   settings: $("settings"), settingsToggle: $("settings-toggle"),
@@ -97,6 +97,9 @@ function loop() {
       if (e.type === "on") synth.noteOn(freqFromMidi(e.midi), e.velocity);
       else synth.noteOff();
     }
+    // Contrôles continus : volume (poing gauche) et distorsion (poignet droit)
+    sendIfMoved("volume", frame.volume, (v) => synth.setVolume(v));
+    sendIfMoved("drive", frame.drive, (v) => synth.setDrive(v));
     overlay.draw(hands, frame);
     render(frame, hands);
   }
@@ -105,6 +108,14 @@ function loop() {
 
 // ---------- Affichage ----------
 
+/** N'envoie une valeur continue à l'audio que si elle a bougé (évite d'empiler les rampes). */
+const sent = {};
+function sendIfMoved(key, value, apply) {
+  if (sent[key] !== undefined && Math.abs(sent[key] - value) < 0.005) return;
+  sent[key] = value;
+  apply(value);
+}
+
 function setIfChanged(key, value, apply) {
   if (state.ui[key] === value) return;
   state.ui[key] = value;
@@ -112,7 +123,7 @@ function setIfChanged(key, value, apply) {
 }
 
 function render(frame, hands) {
-  const { playing, selected, degree, velocity, mode, leftClosed, rightFingers } = frame;
+  const { playing, selected, degree, volume, drive, mode, leftClosed, rightFingers } = frame;
   const shown = playing ?? selected;
 
   setIfChanged("note", shown === null ? "—" : noteName(shown), (v) => (el.note.textContent = v));
@@ -128,8 +139,10 @@ function render(frame, hands) {
   setIfChanged("degSel", degree ?? 0, (d) => markDegree("selected", d));
   setIfChanged("degPlay", playing === null ? 0 : degreeOf(playing), (d) => markDegree("playing", d));
 
-  const vel = Math.round(velocity * 100);
-  setIfChanged("vel", vel, (v) => setMeter(el.velocity, v, `${v} %`));
+  const vol = Math.round(volume * 100);
+  setIfChanged("vol", vol, (v) => setMeter(el.volume, v, `${v} %`));
+  const drv = Math.round(drive * 100);
+  setIfChanged("drv", drv, (v) => setMeter(el.drive, v, `${v} %`));
 
   const fingerKey = rightFingers ? FINGERS.map((f) => (rightFingers[f] ? 1 : 0)).join("") : "";
   setIfChanged("fingers", fingerKey, () => {
@@ -206,6 +219,7 @@ function announce(msg) {
 function releaseAll() {
   if (synth.ctx) synth.noteOff();
   perform = createPerformer();
+  for (const k of Object.keys(sent)) delete sent[k];
 }
 
 // Caméra débranchée : plus aucune image n'arrive, la note resterait tenue.

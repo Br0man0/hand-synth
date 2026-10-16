@@ -85,9 +85,40 @@ export function degreeToMidi(degree, { root = 0, scale = SCALES.major, octave = 
   return 12 * (octave + 1) + root + scale[degree - 1];
 }
 
-/** Hauteur de la main gauche au moment de frapper -> vélocité 0.25..1. */
+/** Hauteur de la main gauche au moment de frapper -> vélocité 0.25..1 (brillance de l'attaque). */
 export function velocityFromHeight(y) {
   return 0.25 + 0.75 * heightInZone(y, 0.15, 0.85);
+}
+
+/** Hauteur de la main gauche -> volume 0..1, lu en continu tant que le poing est fermé. */
+export function volumeFromHeight(y) {
+  return heightInZone(y, 0.15, 0.85);
+}
+
+/**
+ * Rotation de la main dans le plan de l'image, en degrés : 0 = main verticale
+ * (doigts vers le haut), signe selon le sens. Mesurée sur l'axe poignet -> base
+ * du majeur, qui ne dépend pas des doigts tendus ou repliés.
+ */
+export function handRoll(lm) {
+  const w = lm[LM.WRIST];
+  const m = lm[LM.MIDDLE_MCP];
+  return (Math.atan2(m.x - w.x, w.y - m.y) * 180) / Math.PI;
+}
+
+export const DRIVE = { deadZone: 15, fullAt: 60 };
+
+/** Rotation du poignet -> distorsion 0..1, dans un sens comme dans l'autre, avec zone morte. */
+export function driveFromRoll(deg, { deadZone, fullAt } = DRIVE) {
+  return clamp01((Math.abs(deg) - deadZone) / (fullAt - deadZone));
+}
+
+/** Lissage exponentiel (anti-tremblement du tracking). `reset(x)` saute directement à x. */
+export function createSmoother(alpha) {
+  let v = null;
+  const smooth = (x) => (v = v === null ? x : v + alpha * (x - v));
+  smooth.reset = (x) => (v = x);
+  return smooth;
 }
 
 // ---------- Filtrage temporel ----------

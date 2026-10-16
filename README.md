@@ -9,17 +9,19 @@ pour le son. Il n'y a pas de serveur et la vidéo ne quitte pas l'appareil.
 
 ## Jouer
 
-| Main droite (choix de la note) | Degré |
+| Main droite (choix de la note) | Effet |
 |---|---|
-| 1, 2, 3, 4 ou 5 doigts tendus | I, II, III, IV, V |
+| 1, 2, 3, 4 ou 5 doigts tendus | Degrés I, II, III, IV, V |
 | Index et auriculaire | VI |
 | Index, auriculaire et pouce | VII |
+| Tourner le poignet (comme un bouton), dans un sens ou dans l'autre | Distorsion : rien jusqu'à 15°, maximum à 60° |
 
 | Main gauche (déclencheur) | Effet |
 |---|---|
 | Fermer le poing | Joue la note choisie |
 | Ouvrir la main | Relâche la note |
-| Hauteur de la main au moment de fermer | Vélocité (volume et brillance) |
+| Monter ou descendre la main, poing fermé | Volume, en continu pendant que la note sonne |
+| Hauteur de la main au moment de fermer | Brillance de l'attaque |
 | Changer de doigts à droite, poing fermé | Joue la nouvelle note sans relâcher |
 
 **Sans main gauche visible**, chaque changement de doigts joue la note et le
@@ -27,7 +29,7 @@ poing droit la relâche. La touche **M** coupe ou rétablit le son.
 
 La caméra occupe tout l'écran. L'interface flotte par-dessus en verre
 dépoli : une barre d'état, un dock avec la note, les 7 degrés (chacun montre
-les doigts à lever), les doigts détectés et la vélocité. Le bouton Réglages,
+les doigts à lever), les doigts détectés, le volume et la distorsion. Le bouton Réglages,
 en haut à droite, ouvre la tonalité, la gamme (majeure ou mineure), l'octave
 (2 à 5), la forme d'onde et les effets (sec, réverb, ou réverb et delay).
 
@@ -36,7 +38,9 @@ en haut à droite, ouvre la tonalité, la gamme (majeure ou mineure), l'octave
 ```
 3 × dent de scie (−10, 0, +10 cents, panoramiques −0.5 / 0 / +0.5) + sinus à l'octave inférieure
   → passe-bas (Q 1.1) avec enveloppe : ouvre en 8 ms, se referme en ~350 ms (« pluck »)
+  → distorsion (mélange sec / saturation tanh, pilotée par le poignet droit)
   → VCA avec ADSR : A 15 ms, D 250 ms, S 65 %, R 300 ms
+  → volume continu (main gauche, de −30 dB à 0 dB)
   → sec + réverb (Convolver, réponse impulsionnelle générée de 2,4 s) + delay 320 ms (réinjection filtrée)
   → limiteur
 ```
@@ -83,6 +87,7 @@ les tokens et les composants d'interface sont décrits dans
 |---|---|
 | Changer les formes de main associées aux degrés | `degreeFromFingers()` dans `src/mapping.js` |
 | Régler la réactivité (délai de stabilisation, tolérance) | `TIMING` dans `src/performer.js` |
+| Régler la plage de rotation de la distorsion | `DRIVE` dans `src/mapping.js` |
 | Modifier le son (enveloppes, désaccord, effets) | `PATCH` dans `src/synth.js` |
 | Ajouter une gamme | `SCALES` dans `src/mapping.js`, plus une option dans `index.html` |
 | Brancher son propre modèle (ONNX) | `createHandTracker()` dans `src/vision.js` |

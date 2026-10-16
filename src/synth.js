@@ -1,10 +1,10 @@
 // Moteur audio : synthé monophonique à unisson, enveloppes et effets.
 //
-//  saw −10 ct ─ pan −0.5 ─┐
-//  saw   0 ct ─ pan  0   ─┤
-//  saw +10 ct ─ pan +0.5 ─┼─> passe-bas (Q bas, env. filtre) ─> VCA (ADSR) ─┬─> sec ──────────┐
-//  sinus −1 oct ──────────┘                                                ├─> delay ⟲ ─────┼─> mute ─> limiteur ─> sortie
-//                                                                          └─> réverb ──────┘
+//  saw −10 ct ─ pan −0.5 ─┐                                ┌─ sec ─────────────────────────┐
+//  saw   0 ct ─ pan  0   ─┤                                │                               │
+//  saw +10 ct ─ pan +0.5 ─┼─> passe-bas (Q bas, env.) ─────┤                               ├─> VCA (ADSR) ─> volume ─┬─> sec ─────┐
+//  sinus −1 oct ──────────┘                                └─ gain ─> saturation ─> tonalité ┘   (main gauche)       ├─> delay ⟲ ┼─> mute ─> limiteur
+//                                                            (distorsion, main droite)                               └─> réverb ─┘
 //                                                       (le delay alimente aussi la réverb)
 
 export const PATCH = {
@@ -17,6 +17,10 @@ export const PATCH = {
   filter: { q: 1.1, attack: 0.008, decay: 0.35, envAmount: 5500, sustainAmount: 900 },
   glide: 0.004, // constante de temps de la hauteur (évite les sauts secs)
   masterGain: 0.75,
+  // Distorsion : mélange sec / saturé à puissance constante, piloté par le poignet droit
+  drive: { maxGain: 30, wetLevel: 0.45, tone: 5000 },
+  // Volume de la main gauche : 0..1 -> -30 dB..0 dB
+  expression: { floorDb: -30, smooth: 0.04 },
   reverb: { seconds: 2.4, send: 0.25 },
   delay: { time: 0.32, feedback: 0.32, send: 0.18, damping: 2500 },
 };
@@ -37,6 +41,16 @@ function hold(param, t) {
     param.cancelScheduledValues(t);
     param.setValueAtTime(v, t);
   }
+}
+
+/** Courbe de saturation douce (tanh), normalisée à ±1. */
+export function makeDriveCurve(n = 2048, k = 3) {
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(k * x) / Math.tanh(k);
+  }
+  return curve;
 }
 
 /** Réponse impulsionnelle stéréo : bruit à décroissance exponentielle, de plus en plus sombre. */
@@ -63,6 +77,10 @@ export class Synth {
   #sub = null;
   #filter = null;
   #vca = null;
+  #expr = null;
+  #dry = null;
+  #wet = null;
+  #preGain = null;
   #reverbSend = null;
   #delaySend = null;
   #mute = null;
@@ -95,7 +113,18 @@ export class Synth {
     this.#sub.connect(new GainNode(ctx, { gain: P.subLevel })).connect(this.#filter);
     this.#sub.start();
 
-    this.#filter.connect(this.#vca);
+    // Distorsion : deux chemins mélangés avant le VCA
+    this.#dry = new GainNode(ctx, { gain: 1 });
+    this.#wet = new GainNode(ctx, { gain: 0 });
+    this.#preGain = new GainNode(ctx, { gain: 1 });
+    const shaper = new WaveShaperNode(ctx, { curve: makeDriveCurve(), oversample: "4x" });
+    const tone = new BiquadFilterNode(ctx, { type: "lowpass", frequency: P.drive.tone, Q: 0.5 });
+    this.#filter.connect(this.#dry).connect(this.#vca);
+    this.#filter.connect(this.#preGain).connect(shaper).connect(tone).connect(this.#wet).connect(this.#vca);
+
+    // Volume continu (main gauche), après l'enveloppe
+    this.#expr = new GainNode(ctx, { gain: 1 });
+    this.#vca.connect(this.#expr);
 
     // Bus de sortie
     const master = new GainNode(ctx, { gain: P.masterGain });
@@ -104,19 +133,19 @@ export class Synth {
       threshold: -6, knee: 0, ratio: 20, attack: 0.003, release: 0.1,
     });
     master.connect(this.#mute).connect(limiter).connect(ctx.destination);
-    this.#vca.connect(master); // signal sec
+    this.#expr.connect(master); // signal sec
 
     // Réverbération
     const convolver = new ConvolverNode(ctx, { buffer: makeImpulse(ctx, P.reverb.seconds) });
     this.#reverbSend = new GainNode(ctx, { gain: 0 });
-    this.#vca.connect(this.#reverbSend).connect(convolver).connect(master);
+    this.#expr.connect(this.#reverbSend).connect(convolver).connect(master);
 
     // Delay avec réinjection filtrée (chaque répétition est plus sombre)
     const delay = new DelayNode(ctx, { delayTime: P.delay.time, maxDelayTime: 2 });
     const feedback = new GainNode(ctx, { gain: P.delay.feedback });
     const damping = new BiquadFilterNode(ctx, { type: "lowpass", frequency: P.delay.damping });
     this.#delaySend = new GainNode(ctx, { gain: 0 });
-    this.#vca.connect(this.#delaySend).connect(delay);
+    this.#expr.connect(this.#delaySend).connect(delay);
     delay.connect(damping).connect(feedback).connect(delay);
     damping.connect(master);
     damping.connect(this.#reverbSend);
@@ -132,8 +161,10 @@ export class Synth {
     for (const osc of this.#oscs) osc.frequency.setTargetAtTime(freq, t, glide);
     this.#sub.frequency.setTargetAtTime(freq / 2, t, glide);
 
-    // ADSR d'amplitude, depuis le niveau courant (pas de clic si une note sonne déjà)
-    const peak = 0.3 + 0.7 * velocity;
+    // ADSR d'amplitude, depuis le niveau courant (pas de clic si une note sonne déjà).
+    // Le niveau est fixe : le volume est piloté en continu par setVolume (main gauche),
+    // la vélocité ne règle que la brillance de l'attaque (enveloppe de filtre).
+    const peak = 0.85;
     const g = this.#vca.gain;
     hold(g, t);
     g.linearRampToValueAtTime(peak, t + amp.attack);
@@ -157,6 +188,22 @@ export class Synth {
 
   #filterBase(freq) {
     return 250 + freq * 0.8;
+  }
+
+  /** Volume continu 0..1 (main gauche), en échelle de décibels. */
+  setVolume(v, t = this.ctx.currentTime) {
+    const { floorDb, smooth } = PATCH.expression;
+    const gain = v <= 0.01 ? 0 : 10 ** (((1 - Math.min(1, v)) * floorDb) / 20);
+    this.#expr.gain.setTargetAtTime(gain, t, smooth);
+  }
+
+  /** Distorsion 0..1 (rotation du poignet droit) : mélange à puissance constante. */
+  setDrive(amount, t = this.ctx.currentTime) {
+    const a = Math.max(0, Math.min(1, amount));
+    const { maxGain, wetLevel } = PATCH.drive;
+    this.#preGain.gain.setTargetAtTime(1 + maxGain * a, t, 0.03);
+    this.#dry.gain.setTargetAtTime(Math.cos((a * Math.PI) / 2), t, 0.03);
+    this.#wet.gain.setTargetAtTime(Math.sin((a * Math.PI) / 2) * wetLevel, t, 0.03);
   }
 
   setWaveform(type) {
