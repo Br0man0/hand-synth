@@ -1,101 +1,139 @@
-// Fonctions pures : landmarks MediaPipe -> paramètres musicaux.
+// Fonctions pures : landmarks MediaPipe -> gestes -> notes.
 // Coordonnées MediaPipe normalisées : x, y dans [0, 1], origine en haut à gauche
 // de l'image caméra BRUTE (non miroir).
 
-/** Indices des landmarks utilisés (voir le schéma des 21 points MediaPipe). */
-export const LM = { WRIST: 0, THUMB_TIP: 4, INDEX_TIP: 8, MIDDLE_MCP: 9 };
-
-export const PITCH = {
-  minHz: 110, // A2
-  octaves: 3, // -> A5 (880 Hz)
-  zoneTop: 0.1, // y du haut de la zone de jeu
-  zoneBottom: 0.9, // y du bas de la zone de jeu
+/** Indices des 21 landmarks MediaPipe utilisés. */
+export const LM = {
+  WRIST: 0,
+  THUMB_IP: 3, THUMB_TIP: 4,
+  INDEX_MCP: 5, INDEX_PIP: 6, INDEX_TIP: 8,
+  MIDDLE_MCP: 9, MIDDLE_PIP: 10, MIDDLE_TIP: 12,
+  RING_PIP: 14, RING_TIP: 16,
+  PINKY_MCP: 17, PINKY_PIP: 18, PINKY_TIP: 20,
 };
 
-export const SCALES = {
-  glide: null,
-  chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-  pentatonic: [0, 3, 5, 7, 10], // pentatonique mineure de La
-};
+export const FINGERS = ["thumb", "index", "middle", "ring", "pinky"];
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+export const ROMANS = ["I", "II", "III", "IV", "V", "VI", "VII"];
+
+export const SCALES = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10], // mineur naturel
+};
 
 export const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-/** 0 en bas de la zone de jeu, 1 en haut. */
-export function heightInZone(y, top = PITCH.zoneTop, bottom = PITCH.zoneBottom) {
+/** 0 en bas de la zone, 1 en haut. */
+export function heightInZone(y, top, bottom) {
   return clamp01((bottom - y) / (bottom - top));
-}
-
-/** Hauteur (0..1) -> fréquence, échelle exponentielle (une octave = même distance). */
-export function freqFromHeight(t, { minHz, octaves } = PITCH) {
-  return minHz * 2 ** (clamp01(t) * octaves);
 }
 
 export const midiFromFreq = (hz) => 69 + 12 * Math.log2(hz / 440);
 export const freqFromMidi = (midi) => 440 * 2 ** ((midi - 69) / 12);
 
-/** Arrondit une fréquence à la note la plus proche de la gamme (racine La). */
-export function quantize(hz, scale) {
-  if (!scale) return hz;
-  const midi = midiFromFreq(hz);
-  const base = Math.floor(midi / 12) * 12;
-  let best = midi;
-  let bestDist = Infinity;
-  // On teste l'octave courante et ses voisines pour gérer les bords.
-  for (const oct of [base - 12, base, base + 12]) {
-    for (const step of scale) {
-      const candidate = oct + 9 + step; // 9 = La dans une octave MIDI (C = 0)
-      const d = Math.abs(candidate - midi);
-      if (d < bestDist) {
-        bestDist = d;
-        best = candidate;
-      }
-    }
-  }
-  return freqFromMidi(best);
+/** Nom de note avec octave, ex. 60 -> "C4". */
+export function noteName(midi) {
+  const m = Math.round(midi);
+  return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
 }
 
-/** Nom de note et écart en cents, ex. { name: "A4", cents: -12 }. */
-export function noteInfo(hz) {
-  const midi = midiFromFreq(hz);
-  const nearest = Math.round(midi);
-  const name = NOTE_NAMES[((nearest % 12) + 12) % 12] + (Math.floor(nearest / 12) - 1);
-  return { name, cents: Math.round((midi - nearest) * 100) };
-}
+/** Nom de note sans octave, ex. 0 -> "C". */
+export const pitchClassName = (pc) => NOTE_NAMES[((pc % 12) + 12) % 12];
 
-/** Notes jouables d'une gamme dans la plage, avec leur hauteur 0..1 (pour le rail). */
-export function playableNotes(scale, { minHz, octaves } = PITCH) {
-  const lo = midiFromFreq(minHz);
-  const hi = lo + 12 * octaves;
-  const steps = scale ?? SCALES.chromatic;
-  const notes = [];
-  for (let m = Math.ceil(lo); m <= Math.floor(hi); m++) {
-    const rel = (((m - 9) % 12) + 12) % 12;
-    if (steps.includes(rel)) {
-      notes.push({ midi: m, t: (m - lo) / (hi - lo), isRoot: rel === 0 });
-    }
-  }
-  return notes;
-}
-
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// ---------- Doigts ----------
 
 /**
- * Pincement pouce-index normalisé par la taille de la main :
- * 0 = doigts collés, 1 = main grande ouverte. Indépendant de la distance à la caméra.
+ * Doigts tendus, indépendamment de l'inclinaison de la main.
+ * Un doigt est tendu si son bout est nettement plus loin du poignet que son
+ * articulation PIP. On ne compare pas les y (comme gesture-synth) : ça échoue dès
+ * que la main penche.
+ * Le pouce est tendu si son bout est loin de la base du majeur (rapporté à la
+ * largeur de la paume). Replié sur la paume ou contre l'index, il en est proche.
  */
-export function pinchOpenness(lm) {
-  const palm = dist(lm[LM.WRIST], lm[LM.MIDDLE_MCP]);
-  if (palm < 1e-6) return 0;
-  const ratio = dist(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]) / palm;
-  return clamp01((ratio - 0.15) / 0.9);
+export function fingerStates(lm) {
+  const w = lm[LM.WRIST];
+  const ext = (tip, pip) => dist(w, lm[tip]) > dist(w, lm[pip]) * 1.1;
+  const palmWidth = dist(lm[LM.INDEX_MCP], lm[LM.PINKY_MCP]);
+  return {
+    thumb: palmWidth > 1e-6 && dist(lm[LM.THUMB_TIP], lm[LM.MIDDLE_MCP]) > palmWidth * 0.9,
+    index: ext(LM.INDEX_TIP, LM.INDEX_PIP),
+    middle: ext(LM.MIDDLE_TIP, LM.MIDDLE_PIP),
+    ring: ext(LM.RING_TIP, LM.RING_PIP),
+    pinky: ext(LM.PINKY_TIP, LM.PINKY_PIP),
+  };
 }
 
-/** Ouverture 0..1 -> fréquence de coupure, exponentielle de 200 Hz à 8 kHz. */
-export function cutoffFromOpenness(o) {
-  return 200 * 40 ** clamp01(o);
+export const countFingers = (f) => FINGERS.filter((k) => f[k]).length;
+
+/**
+ * Option R3 : degré 1–7 depuis la forme de la main droite, ou null (poing).
+ *   1 à 5 doigts tendus        -> I à V
+ *   index + auriculaire        -> VI
+ *   index + auriculaire + pouce -> VII
+ * Les formes spéciales sont testées avant le comptage (elles ont 2 et 3 doigts).
+ */
+export function degreeFromFingers(f) {
+  if (f.index && f.pinky && !f.middle && !f.ring) return f.thumb ? 7 : 6;
+  const n = countFingers(f);
+  return n === 0 ? null : n;
 }
+
+/** Degré (1–7) -> numéro MIDI dans la tonalité et l'octave choisies. */
+export function degreeToMidi(degree, { root = 0, scale = SCALES.major, octave = 4 } = {}) {
+  return 12 * (octave + 1) + root + scale[degree - 1];
+}
+
+/** Hauteur de la main gauche au moment de frapper -> vélocité 0.25..1. */
+export function velocityFromHeight(y) {
+  return 0.25 + 0.75 * heightInZone(y, 0.15, 0.85);
+}
+
+// ---------- Filtrage temporel ----------
+
+/**
+ * Stabilisateur : une valeur doit rester identique `holdMs` avant d'être validée.
+ * Indispensable pour le comptage : passer de 1 à 4 doigts traverse 2 et 3.
+ */
+export function createStabilizer(holdMs) {
+  let committed = null;
+  let pending = null;
+  let since = 0;
+  return (value, now) => {
+    if (value !== pending) {
+      pending = value;
+      since = now;
+    }
+    if (now - since >= holdMs) committed = pending;
+    return committed;
+  };
+}
+
+/**
+ * Poing de la main gauche avec hystérésis :
+ * fermé quand aucun des 4 doigts (hors pouce) n'est tendu, ouvert à partir de 2.
+ * Entre les deux, l'état précédent est conservé : pas de rebond sur une main mi-fermée.
+ */
+export function createFistDetector() {
+  let closed = false;
+  return {
+    update(f) {
+      const n = ["index", "middle", "ring", "pinky"].filter((k) => f[k]).length;
+      if (n === 0) closed = true;
+      else if (n >= 2) closed = false;
+      return closed;
+    },
+    reset(value = false) {
+      closed = value;
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+// ---------- Mains ----------
 
 /**
  * Répartit les mains détectées selon leur côté À L'ÉCRAN (vidéo miroir).
@@ -115,21 +153,4 @@ export function assignHands(hands) {
     return h.screenX >= 0.5 ? { left: null, right: h.lm } : { left: h.lm, right: null };
   }
   return { left: null, right: null };
-}
-
-/**
- * Rectangle réellement occupé par la vidéo dans son conteneur avec
- * object-fit: cover. Sert à placer le rail sur les vraies coordonnées.
- */
-export function coverRect(boxW, boxH, mediaW, mediaH) {
-  const scale = Math.max(boxW / mediaW, boxH / mediaH);
-  const w = mediaW * scale;
-  const h = mediaH * scale;
-  return { x: (boxW - w) / 2, y: (boxH - h) / 2, w, h };
-}
-
-/** Lissage exponentiel simple, pour stabiliser l'affichage (pas l'audio). */
-export function smoother(alpha = 0.35) {
-  let v = null;
-  return (x) => (v = v === null ? x : v + alpha * (x - v));
 }

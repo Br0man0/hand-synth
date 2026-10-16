@@ -18,24 +18,20 @@
       <video id="video" class="stage__media" playsinline muted aria-hidden="true"></video>
       <canvas id="overlay" class="stage__media" aria-hidden="true"></canvas>
 
-      <div class="rail" id="rail" aria-hidden="true">
-        <ol class="rail__ticks" id="rail-ticks"></ol>
-        <div class="rail__cursor" id="rail-cursor" hidden></div>
-      </div>
-
       <div class="gate" id="gate">
         <h1 class="gate__title">Hand Synth</h1>
-        <p class="gate__lead">Joue d'un synthétiseur avec tes deux mains, devant ta webcam.</p>
+        <p class="gate__lead">Choisis la note avec les doigts de la main droite, joue-la en fermant le poing gauche.</p>
         <dl class="gate__map">
           <div class="gate__row gate__row--right">
             <dt>Main droite</dt>
-            <dd>Monte ou descends la main pour changer la note.</dd>
+            <dd>1 à 5 doigts tendus : degrés I à V. Index et auriculaire : VI. Ajoute le pouce : VII.</dd>
           </div>
           <div class="gate__row gate__row--left">
             <dt>Main gauche</dt>
-            <dd>La hauteur règle le volume. Écarte le pouce et l'index pour ouvrir le filtre.</dd>
+            <dd>Ferme le poing pour jouer, ouvre-le pour relâcher. Plus la main est haute, plus la note est forte.</dd>
           </div>
         </dl>
+        <p class="gate__hint">Sans main gauche, la note change dès que tu changes de doigts, et le poing droit la coupe.</p>
         <button class="key key--primary" id="start" type="button">Démarrer</button>
         <p class="gate__note">La vidéo est analysée sur ton appareil. Elle n'est envoyée nulle part.</p>
         <p class="gate__error" id="error" role="alert" hidden></p>
@@ -43,46 +39,66 @@
     </section>
 
     <section class="panel" aria-label="Commandes">
+      <ol class="degrees" id="degrees" aria-label="Degrés de la gamme"></ol>
+
       <div class="panel__zone readout" aria-live="off">
         <span class="readout__note" id="note">—</span>
         <span class="readout__detail" id="detail">Silence</span>
       </div>
 
-      <div class="panel__zone panel__zone--meters">
-        <div class="meter meter--left" id="meter-volume" role="meter" aria-label="Volume"
+      <div class="panel__zone panel__zone--hands">
+        <div class="fingers-row">
+          <span class="fingers" id="fingers" role="img" aria-label="Doigts tendus : aucun">
+            <span data-finger="thumb"></span><span data-finger="index"></span><span data-finger="middle"></span><span data-finger="ring"></span><span data-finger="pinky"></span>
+          </span>
+          <span class="fingers__label">Doigts de la main droite</span>
+        </div>
+        <div class="meter meter--left" id="meter-velocity" role="meter" aria-label="Vélocité"
              aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 %">
-          <span class="meter__label">Volume</span>
+          <span class="meter__label">Vélocité</span>
           <span class="meter__bar"><span class="meter__fill"></span></span>
           <span class="meter__value">0 %</span>
         </div>
-        <div class="meter meter--left" id="meter-filter" role="meter" aria-label="Filtre"
-             aria-valuemin="200" aria-valuemax="8000" aria-valuenow="2000" aria-valuetext="2.0 kHz">
-          <span class="meter__label">Filtre</span>
-          <span class="meter__bar"><span class="meter__fill"></span></span>
-          <span class="meter__value">2.0 kHz</span>
-        </div>
         <ul class="hands" aria-label="Mains détectées">
-          <li class="hand-led hand-led--left" id="led-left" data-on="false">Main gauche</li>
-          <li class="hand-led hand-led--right" id="led-right" data-on="false">Main droite</li>
+          <li class="hand-led hand-led--left" id="led-left" data-on="false">Main gauche absente</li>
+          <li class="hand-led hand-led--right" id="led-right" data-on="false">Main droite absente</li>
         </ul>
       </div>
 
-      <div class="panel__zone panel__zone--controls">
+      <details class="panel__zone settings" id="settings" open>
+        <summary class="settings__summary">Réglages</summary>
+        <div class="settings__body">
+        <div class="control">
+          <label class="control__label" for="key">Tonalité</label>
+          <select class="select" id="key"></select>
+        </div>
+        <fieldset class="segmented">
+          <legend>Gamme</legend>
+          <label><input type="radio" name="scale" value="major" checked /><span>Majeur</span></label>
+          <label><input type="radio" name="scale" value="minor" /><span>Mineur</span></label>
+        </fieldset>
+        <fieldset class="segmented">
+          <legend>Octave</legend>
+          <label><input type="radio" name="octave" value="2" /><span>2</span></label>
+          <label><input type="radio" name="octave" value="3" checked /><span>3</span></label>
+          <label><input type="radio" name="octave" value="4" /><span>4</span></label>
+          <label><input type="radio" name="octave" value="5" /><span>5</span></label>
+        </fieldset>
         <fieldset class="segmented">
           <legend>Forme d'onde</legend>
-          <label><input type="radio" name="wave" value="sine" /><span>Sinus</span></label>
-          <label><input type="radio" name="wave" value="triangle" /><span>Triangle</span></label>
           <label><input type="radio" name="wave" value="sawtooth" checked /><span>Dent de scie</span></label>
           <label><input type="radio" name="wave" value="square" /><span>Carré</span></label>
+          <label><input type="radio" name="wave" value="triangle" /><span>Triangle</span></label>
         </fieldset>
         <fieldset class="segmented">
-          <legend>Hauteur</legend>
-          <label><input type="radio" name="scale" value="glide" /><span>Glissando</span></label>
-          <label><input type="radio" name="scale" value="chromatic" checked /><span>Chromatique</span></label>
-          <label><input type="radio" name="scale" value="pentatonic" /><span>Pentatonique</span></label>
+          <legend>Effets</legend>
+          <label><input type="radio" name="fx" value="dry" /><span>Sec</span></label>
+          <label><input type="radio" name="fx" value="reverb" checked /><span>Réverb</span></label>
+          <label><input type="radio" name="fx" value="space" /><span>Réverb et delay</span></label>
         </fieldset>
         <button class="key key--toggle" id="mute" type="button" aria-pressed="false" aria-keyshortcuts="M">Couper le son</button>
-      </div>
+        </div>
+      </details>
     </section>
   </main>
   <p class="sr-only" id="status" aria-live="polite"></p>

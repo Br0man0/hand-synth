@@ -6,10 +6,11 @@ en aluminium**. Elle porte la lecture de la note et les réglages.
 
 ## Principes
 
-1. **Une couleur par main.** Le cobalt correspond à la main gauche (volume et
-   filtre), le jaune signal à la main droite (hauteur). Chaque élément qui
-   dépend d'une main utilise sa couleur : le squelette, les jauges, le curseur
-   du rail et le témoin de détection. Ces deux couleurs ne servent jamais à
+1. **Une couleur par main.** Le cobalt correspond à la main gauche (le
+   déclencheur et la vélocité), le jaune signal à la main droite (le choix de
+   la note). Chaque élément qui dépend d'une main utilise sa couleur : le
+   squelette, la jauge de vélocité, les témoins des doigts, le liseré du degré
+   choisi et le témoin de détection. Ces deux couleurs ne servent jamais à
    décorer.
 2. **Un seul élément fort.** La note jouée s'affiche en très grand, en Archivo
    étendu. Tout le reste reste sobre.
@@ -26,8 +27,9 @@ Ils sont définis dans `styles.css` sous `:root`.
 | `--alu-edge` | `#A9AEB3` | Filets et bords de la façade |
 | `--graphite` | `#1E2328` | Texte, fond de scène |
 | `--graphite-soft` | `#4A5158` | Texte secondaire (contraste 5:1 sur `--alu`) |
-| `--hand-left` | `#2F4BE0` | Main gauche : volume et filtre |
-| `--hand-right` | `#F2B705` | Main droite : hauteur |
+| `--hand-left` | `#2F4BE0` | Main gauche : déclencheur, vélocité |
+| `--hand-right` | `#F2B705` | Main droite : choix de la note (sur fond graphite ou vidéo) |
+| `--hand-right-ink` | `#6F5400` | Jaune profond pour les repères de la main droite sur l'alu (4,5:1) : liseré du degré choisi, contours |
 | `--alert` | `#B3202F` | Erreurs |
 
 **Typographie :** on utilise une seule famille, **Archivo** (variable, axes
@@ -53,11 +55,32 @@ vaut 90 ms. Les transitions sont désactivées si l'utilisateur a activé
 
 ## Composants
 
+### Guide des degrés (`.degrees` > `.degree`)
+C'est une rangée de 7 touches, une par degré, sur toute la largeur de la
+façade. Chacune affiche le chiffre romain, la note dans la tonalité courante
+et le geste à faire. Le degré choisi par la main droite reçoit un liseré jaune
+en bas (`--hand-right-ink`, `data-selected`). Le jaune signal seul n'atteint
+que 1,1:1 sur l'alu. Le degré qui sonne apparaît comme une touche
+enfoncée : fond graphite et texte alu (`data-playing`). Sur mobile, le geste
+est masqué.
+
 ### Lecture de note (`.readout`)
-Elle affiche le nom de la note (par exemple `A4`) en `--type-readout`, puis la
-fréquence et l'écart en cents en `--type-label`. Le conteneur porte
-`aria-live="off"`, parce qu'il change trop souvent pour un lecteur d'écran.
-L'état « aucune main » est affiché via `—` et le mot « Silence ».
+Elle affiche le nom de la note (par exemple `E3`) en `--type-readout`, puis le
+degré et la fréquence en `--type-label`. Il y a trois états, portés par
+`data-state` sur `.readout__note` :
+- `playing` : texte graphite, la note sonne ;
+- `armed` : texte `--graphite-soft`, la note est choisie mais pas jouée, avec
+  la consigne « ferme le poing gauche » ;
+- `idle` : `—` et « Silence ».
+
+Le conteneur porte `aria-live="off"`, parce qu'il change trop souvent pour un
+lecteur d'écran.
+
+### Témoins des doigts (`.fingers`)
+Ce sont 5 barres de hauteurs différentes qui dessinent une main (pouce
+court à gauche, majeur le plus haut). Une barre est jaune avec un contour
+`--hand-right-ink` quand le doigt est tendu, et en creux alu sinon. L'élément porte
+`role="img"` et un `aria-label` qui nomme les doigts tendus.
 
 ### Jauge (`.meter`)
 Elle comprend un libellé, une barre et une valeur chiffrée. Le remplissage
@@ -65,8 +88,8 @@ utilise la couleur de la main qui pilote le paramètre. Elle porte
 `role="meter"` avec `aria-valuemin`, `aria-valuemax` et `aria-valuenow`.
 
 ### Segments (`.segmented`)
-C'est un groupe de boutons radio natifs habillés en touches (forme d'onde,
-mode de hauteur). Ils se pilotent au clavier avec les flèches (comportement
+C'est un groupe de boutons radio natifs habillés en touches (gamme, octave,
+forme d'onde, effets). Ils se pilotent au clavier avec les flèches (comportement
 natif des radios). L'état actif est représenté par le fond graphite et le
 texte alu. Le focus est indiqué par un contour de 2 px en `--hand-left`
 (4,1:1 sur l'alu), décalé de 2 px. Sur fond graphite (écran d'accueil), le
@@ -82,7 +105,18 @@ C'est une pastille de la couleur de la main, pleine quand la main est
 détectée et vide sinon. Elle est toujours accompagnée d'un texte, pour que
 l'information ne passe pas que par la couleur.
 
-### Rail de hauteur (`.rail`)
-Il est placé sur le bord droit de la scène. Il porte des graduations aux notes
-jouables, positionnées sur la zone vidéo réellement affichée (calcul
-`object-fit: cover`), et un curseur jaune qui suit la main droite.
+### Liste déroulante (`.select`)
+Elle sert à la tonalité. C'est un `<select>` natif avec le même habillage que
+les touches. Sa hauteur minimale est de 44 px et son libellé est au-dessus.
+
+### Réglages repliables (`.settings`)
+C'est un `<details>` qui contient tous les réglages. Sur ordinateur, il est
+toujours ouvert et son titre est masqué. Sous 560 px de large, il est replié
+par défaut pour laisser la place à la vidéo, et son titre « Réglages » sert
+de bouton.
+
+### Superposition vidéo
+- Main droite : le squelette est jaune, avec un anneau sur le bout de chaque
+  doigt tendu.
+- Main gauche : le squelette est cobalt, avec un disque sur la paume, plein
+  quand le poing est fermé (la note est tenue) et vide sinon.

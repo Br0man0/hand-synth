@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "npx --yes serve@14.2.4 -l 5173 .",
-    "test": "node --test"
+    "test": "node --test \"test/*.test.js\""
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

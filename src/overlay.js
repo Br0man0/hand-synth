@@ -9,6 +9,7 @@ const CONNECTIONS = [
   [9, 13], [13, 14], [14, 15], [15, 16],
   [13, 17], [17, 18], [18, 19], [19, 20], [0, 17],
 ];
+const TIPS = { thumb: 4, index: 8, middle: 12, ring: 16, pinky: 20 };
 
 export function createOverlay(canvas, colors) {
   const ctx = canvas.getContext("2d");
@@ -20,38 +21,58 @@ export function createOverlay(canvas, colors) {
     }
   }
 
-  function drawHand(lm, color, highlight) {
-    const { width: W, height: H } = canvas;
+  const px = (p) => [p.x * canvas.width, p.y * canvas.height];
+  const unit = () => Math.max(2, canvas.width / 320);
+
+  function skeleton(lm, color) {
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(2, W / 320);
+    ctx.fillStyle = color;
+    ctx.lineWidth = unit();
     ctx.lineCap = "round";
     ctx.beginPath();
     for (const [a, b] of CONNECTIONS) {
-      ctx.moveTo(lm[a].x * W, lm[a].y * H);
-      ctx.lineTo(lm[b].x * W, lm[b].y * H);
+      ctx.moveTo(...px(lm[a]));
+      ctx.lineTo(...px(lm[b]));
     }
     ctx.stroke();
-    ctx.fillStyle = color;
     for (const p of lm) {
       ctx.beginPath();
-      ctx.arc(p.x * W, p.y * H, ctx.lineWidth * 1.2, 0, Math.PI * 2);
+      ctx.arc(...px(p), unit() * 1.2, 0, Math.PI * 2);
       ctx.fill();
     }
-    // Point de contrôle mis en évidence (anneau plus large).
-    for (const i of highlight) {
-      ctx.beginPath();
-      ctx.lineWidth = Math.max(2, W / 400);
-      ctx.arc(lm[i].x * W, lm[i].y * H, ctx.lineWidth * 6, 0, Math.PI * 2);
-      ctx.stroke();
+  }
+
+  function ring(p, radius, color, filled) {
+    ctx.beginPath();
+    ctx.arc(...px(p), radius, 0, Math.PI * 2);
+    ctx.lineWidth = unit();
+    ctx.strokeStyle = color;
+    if (filled) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.45;
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
+    ctx.stroke();
   }
 
   return {
     resize,
-    draw({ left, right }) {
+    /** frame : état renvoyé par le performer (doigts tendus, poing fermé). */
+    draw({ left, right }, frame) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (left) drawHand(left, colors.left, [4, 8]); // pincement -> filtre
-      if (right) drawHand(right, colors.right, [9]); // paume -> hauteur
+      if (right) {
+        skeleton(right, colors.right);
+        // Bouts des doigts tendus : ce sont eux qui choisissent la note.
+        for (const [name, i] of Object.entries(TIPS)) {
+          if (frame.rightFingers?.[name]) ring(right[i], unit() * 5, colors.right, false);
+        }
+      }
+      if (left) {
+        skeleton(left, colors.left);
+        // Paume : disque plein quand le poing est fermé (note tenue).
+        ring(left[9], unit() * 14, colors.left, frame.leftClosed);
+      }
     },
   };
 }

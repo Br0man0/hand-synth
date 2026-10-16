@@ -1,26 +1,19 @@
 import { Synth } from "./synth.js";
 import { startCamera, createHandTracker } from "./vision.js";
 import { createOverlay } from "./overlay.js";
+import { createPerformer } from "./performer.js";
 import {
-  LM, PITCH, SCALES,
-  assignHands, heightInZone, freqFromHeight, quantize, noteInfo,
-  pinchOpenness, cutoffFromOpenness, playableNotes, coverRect, freqFromMidi,
+  SCALES, ROMANS, FINGERS, assignHands, degreeToMidi, freqFromMidi, noteName, pitchClassName,
 } from "./mapping.js";
-
-// Réglages quand la main gauche n'est pas visible : on peut jouer à une main.
-const DEFAULT_GAIN = 0.6;
-const DEFAULT_CUTOFF = 2000;
-const VOLUME_ZONE = { top: 0.15, bottom: 0.85 };
 
 const $ = (id) => document.getElementById(id);
 const el = {
   app: $("app"), stage: $("stage"), video: $("video"), canvas: $("overlay"),
-  gate: $("gate"), start: $("start"), error: $("error"), status: $("status"),
-  note: $("note"), detail: $("detail"),
-  volume: $("meter-volume"), filter: $("meter-filter"),
+  start: $("start"), error: $("error"), status: $("status"),
+  note: $("note"), detail: $("detail"), degrees: $("degrees"),
+  fingers: $("fingers"), velocity: $("meter-velocity"),
   ledLeft: $("led-left"), ledRight: $("led-right"),
-  rail: $("rail"), railTicks: $("rail-ticks"), railCursor: $("rail-cursor"),
-  mute: $("mute"),
+  key: $("key"), mute: $("mute"),
 };
 
 const css = getComputedStyle(document.documentElement);
@@ -30,7 +23,14 @@ const overlay = createOverlay(el.canvas, {
 });
 
 const synth = new Synth();
-const state = { scale: SCALES.chromatic, landmarker: null, lastVideoTime: -1, running: false, ui: {} };
+let perform = createPerformer();
+const state = {
+  key: { root: 0, scale: SCALES.major, octave: 3 },
+  landmarker: null,
+  lastVideoTime: -1,
+  running: false,
+  ui: {},
+};
 
 const ERRORS = {
   insecure: "La caméra ne fonctionne qu'en HTTPS ou sur localhost. Ouvre la page via son adresse https://.",
@@ -41,6 +41,9 @@ const ERRORS = {
   model: "Le modèle de suivi des mains n'a pas pu se charger. Vérifie ta connexion, puis réessaie.",
 };
 
+const FINGER_NAMES = { thumb: "pouce", index: "index", middle: "majeur", ring: "annulaire", pinky: "auriculaire" };
+const GESTURES = ["1 doigt", "2 doigts", "3 doigts", "4 doigts", "5 doigts", "index et auriculaire", "index, auriculaire et pouce"];
+
 // ---------- Démarrage ----------
 
 el.start.addEventListener("click", async () => {
@@ -49,13 +52,16 @@ el.start.addEventListener("click", async () => {
   try {
     el.start.textContent = "Ouverture de la caméra…";
     await synth.start(); // dans le geste utilisateur : requis pour l'audio
+    // Sur petit écran, les réglages sont repliés pour laisser la place à la vidéo.
+if (matchMedia("(max-width: 560px)").matches) $("settings").open = false;
+
+applyControls();
     const stream = await startCamera(el.video);
     stream.getVideoTracks()[0]?.addEventListener("ended", onCameraLost);
     el.start.textContent = "Chargement du suivi des mains…";
     state.landmarker ??= await createHandTracker();
     el.app.dataset.state = "playing";
-    announce("Prêt. Lève la main droite pour jouer.");
-    layoutRail();
+    announce("Prêt. Choisis une note avec la main droite, ferme le poing gauche pour la jouer.");
     if (!state.running) {
       state.running = true;
       requestAnimationFrame(loop);
@@ -76,30 +82,17 @@ function loop() {
   if (video.readyState >= 2 && video.currentTime !== state.lastVideoTime) {
     state.lastVideoTime = video.currentTime;
     overlay.resize(video.videoWidth, video.videoHeight);
-    const result = state.landmarker.detectForVideo(video, performance.now());
-    const hands = assignHands(result.landmarks);
-    play(hands);
-    overlay.draw(hands);
+    const now = performance.now();
+    const hands = assignHands(state.landmarker.detectForVideo(video, now).landmarks);
+    const frame = perform(hands, now, state.key);
+    for (const e of frame.events) {
+      if (e.type === "on") synth.noteOn(freqFromMidi(e.midi), e.velocity);
+      else synth.noteOff();
+    }
+    overlay.draw(hands, frame);
+    render(frame, hands);
   }
   requestAnimationFrame(loop);
-}
-
-function play({ left, right }) {
-  let freq = null;
-  let rawT = null;
-  if (right) {
-    rawT = heightInZone(right[LM.MIDDLE_MCP].y);
-    freq = quantize(freqFromHeight(rawT), state.scale);
-  }
-
-  const gain = left
-    ? heightInZone(left[LM.MIDDLE_MCP].y, VOLUME_ZONE.top, VOLUME_ZONE.bottom)
-    : DEFAULT_GAIN;
-  const cutoff = left ? cutoffFromOpenness(pinchOpenness(left)) : DEFAULT_CUTOFF;
-
-  // Pas de main droite = silence (on garde la dernière fréquence pour éviter un saut).
-  synth.set(freq ? { freq, gain, cutoff } : { gain: 0, cutoff });
-  render({ freq, rawT, gain: freq ? gain : 0, cutoff, left: !!left, right: !!right });
 }
 
 // ---------- Affichage ----------
@@ -110,77 +103,92 @@ function setIfChanged(key, value, apply) {
   apply(value);
 }
 
-function render({ freq, rawT, gain, cutoff, left, right }) {
-  if (freq) {
-    const { name, cents } = noteInfo(freq);
-    const sign = cents > 0 ? "+" : cents < 0 ? "−" : "±";
-    setIfChanged("note", name, (v) => (el.note.textContent = v));
-    setIfChanged("detail", `${Math.round(freq)} Hz, ${sign}${Math.abs(cents)} cents`,
-      (v) => (el.detail.textContent = v));
-  } else {
-    setIfChanged("note", "—", (v) => (el.note.textContent = v));
-    setIfChanged("detail", "Silence", (v) => (el.detail.textContent = v));
-  }
+function render(frame, hands) {
+  const { playing, selected, degree, velocity, mode, leftClosed, rightFingers } = frame;
+  const shown = playing ?? selected;
 
-  const vol = Math.round(gain * 100);
-  setIfChanged("vol", vol, (v) => setMeter(el.volume, v, v, `${v} %`));
-  const cut = Math.round(cutoff / 10) * 10;
-  const cutPct = Math.round((Math.log(cutoff / 200) / Math.log(40)) * 100);
-  setIfChanged("cut", cut, (v) =>
-    setMeter(el.filter, cutPct, v, v >= 1000 ? `${(v / 1000).toFixed(1)} kHz` : `${v} Hz`));
+  setIfChanged("note", shown === null ? "—" : noteName(shown), (v) => (el.note.textContent = v));
+  setIfChanged("noteState", playing !== null ? "playing" : selected !== null ? "armed" : "idle",
+    (v) => (el.note.dataset.state = v));
+  const detail =
+    playing !== null ? `${ROMANS[degreeOf(playing) - 1] ?? ""}, ${Math.round(freqFromMidi(playing))} Hz`
+    : selected !== null ? `${ROMANS[degree - 1]} prêt, ferme le poing gauche`
+    : "Silence";
+  setIfChanged("detail", detail, (v) => (el.detail.textContent = v));
 
-  setIfChanged("ledL", left, (v) => (el.ledLeft.dataset.on = v));
-  setIfChanged("ledR", right, (v) => (el.ledRight.dataset.on = v));
+  setIfChanged("degSel", degree ?? 0, (d) => markDegree("selected", d));
+  setIfChanged("degPlay", playing === null ? 0 : degreeOf(playing), (d) => markDegree("playing", d));
 
-  const pos = rawT === null ? null : Math.round(rawT * 1000) / 1000;
-  setIfChanged("cursor", pos, (v) => {
-    el.railCursor.hidden = v === null;
-    if (v !== null) el.railCursor.style.setProperty("--t", v);
+  const vel = Math.round(velocity * 100);
+  setIfChanged("vel", vel, (v) => setMeter(el.velocity, v, `${v} %`));
+
+  const fingerKey = rightFingers ? FINGERS.map((f) => (rightFingers[f] ? 1 : 0)).join("") : "";
+  setIfChanged("fingers", fingerKey, () => {
+    const up = rightFingers ? FINGERS.filter((f) => rightFingers[f]) : [];
+    for (const span of el.fingers.children) span.dataset.on = up.includes(span.dataset.finger);
+    el.fingers.setAttribute("aria-label",
+      `Doigts tendus : ${up.length ? up.map((f) => FINGER_NAMES[f]).join(", ") : "aucun"}`);
+  });
+
+  const leftText = hands.left ? (leftClosed ? "Main gauche : poing fermé" : "Main gauche : ouverte")
+    : mode === "auto" ? "Sans main gauche : jeu à une main" : "Main gauche absente";
+  setIfChanged("ledL", leftText, (v) => {
+    el.ledLeft.textContent = v;
+    el.ledLeft.dataset.on = !!hands.left;
+  });
+  setIfChanged("ledR", !!hands.right, (v) => {
+    el.ledRight.textContent = v ? "Main droite détectée" : "Main droite absente";
+    el.ledRight.dataset.on = v;
   });
 }
 
-function setMeter(meter, pct, value, text) {
-  meter.style.setProperty("--fill", `${Math.max(0, Math.min(100, pct))}%`);
+/** Degré (1–7) d'une note jouée dans la tonalité courante. */
+function degreeOf(midi) {
+  for (let d = 1; d <= 7; d++) if (degreeToMidi(d, state.key) === midi) return d;
+  return 0;
+}
+
+function markDegree(attr, degree) {
+  for (const li of el.degrees.children) li.toggleAttribute(`data-${attr}`, +li.dataset.degree === degree);
+}
+
+function setMeter(meter, value, text) {
+  meter.style.setProperty("--fill", `${value}%`);
   meter.setAttribute("aria-valuenow", value);
   meter.setAttribute("aria-valuetext", text);
   meter.querySelector(".meter__value").textContent = text;
 }
 
-/** Place le rail sur la zone de jeu réellement visible (vidéo en object-fit: cover). */
-function layoutRail() {
-  const { video, stage } = el;
-  if (!video.videoWidth) return;
-  const box = stage.getBoundingClientRect();
-  const r = coverRect(box.width, box.height, video.videoWidth, video.videoHeight);
-  // Pas de clamp : si la vidéo est rognée, le rail déborde et la scène le masque,
-  // ce qui garde les graduations alignées sur la main.
-  el.rail.style.top = `${r.y + PITCH.zoneTop * r.h}px`;
-  el.rail.style.height = `${(PITCH.zoneBottom - PITCH.zoneTop) * r.h}px`;
-
-  el.railTicks.replaceChildren(
-    ...playableNotes(state.scale).map(({ midi, t, isRoot }) => {
-      const tick = document.createElement("li");
-      tick.className = isRoot ? "rail__tick rail__tick--root" : "rail__tick";
-      tick.style.setProperty("--t", t);
-      if (isRoot) {
-        const label = document.createElement("span");
-        label.className = "rail__label";
-        label.textContent = noteInfo(freqFromMidi(midi)).name;
-        tick.append(label);
-      }
-      return tick;
+/** Guide des 7 degrés : chiffre romain, note dans la tonalité, geste. */
+function renderDegrees() {
+  el.degrees.replaceChildren(
+    ...ROMANS.map((roman, i) => {
+      const li = document.createElement("li");
+      li.className = "degree";
+      li.dataset.degree = i + 1;
+      li.innerHTML = `<span class="degree__roman"></span><span class="degree__note"></span><span class="degree__gesture"></span>`;
+      li.children[0].textContent = roman;
+      li.children[1].textContent = noteName(degreeToMidi(i + 1, state.key));
+      li.children[2].textContent = GESTURES[i];
+      return li;
     }),
   );
+  state.ui.degSel = state.ui.degPlay = undefined; // forcer le surlignage au prochain rendu
 }
 
-function silence() {
-  synth.set({ gain: 0 });
-  render({ freq: null, rawT: null, gain: 0, cutoff: DEFAULT_CUTOFF, left: false, right: false });
+function announce(msg) {
+  el.status.textContent = msg;
 }
 
-// Caméra débranchée : plus aucune image n'arrive, la dernière note resterait figée.
+/** Relâche la note et repart d'un état de jeu neuf. */
+function releaseAll() {
+  if (synth.ctx) synth.noteOff();
+  perform = createPerformer();
+}
+
+// Caméra débranchée : plus aucune image n'arrive, la note resterait tenue.
 function onCameraLost() {
-  silence();
+  releaseAll();
   el.app.dataset.state = "idle";
   el.error.textContent = "La caméra s'est arrêtée. Rebranche-la, puis appuie sur Réessayer.";
   el.error.hidden = false;
@@ -188,25 +196,39 @@ function onCameraLost() {
   el.start.textContent = "Réessayer";
 }
 
-// Onglet masqué : requestAnimationFrame s'arrête, on coupe pour ne pas laisser une note tenue.
+// Onglet masqué : requestAnimationFrame s'arrête, on relâche la note.
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) silence();
+  if (document.hidden) releaseAll();
 });
-
-function announce(msg) {
-  el.status.textContent = msg;
-}
 
 // ---------- Contrôles ----------
 
-document.querySelectorAll('input[name="wave"]').forEach((input) =>
-  input.addEventListener("change", () => synth.setWaveform(input.value)));
+for (let pc = 0; pc < 12; pc++) {
+  el.key.append(new Option(pitchClassName(pc), pc, pc === 0, pc === 0));
+}
 
-document.querySelectorAll('input[name="scale"]').forEach((input) =>
-  input.addEventListener("change", () => {
-    state.scale = SCALES[input.value];
-    layoutRail();
-  }));
+function readControls() {
+  const checked = (name) => document.querySelector(`input[name="${name}"]:checked`).value;
+  state.key = {
+    root: Number(el.key.value),
+    scale: SCALES[checked("scale")],
+    octave: Number(checked("octave")),
+  };
+  return { wave: checked("wave"), fx: checked("fx") };
+}
+
+function applyControls() {
+  const { wave, fx } = readControls();
+  if (synth.ctx) {
+    synth.setWaveform(wave);
+    synth.setEffects(fx);
+  }
+  renderDegrees();
+}
+
+el.key.addEventListener("change", applyControls);
+document.querySelectorAll(".panel input[type=radio]").forEach((input) =>
+  input.addEventListener("change", applyControls));
 
 function toggleMute() {
   const muted = synth.toggleMute();
@@ -215,8 +237,11 @@ function toggleMute() {
 }
 el.mute.addEventListener("click", toggleMute);
 document.addEventListener("keydown", (e) => {
+  if (e.target.closest?.("select")) return;
   if (e.key.toLowerCase() === "m" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) toggleMute();
 });
 
-new ResizeObserver(layoutRail).observe(el.stage);
-el.video.addEventListener("loadedmetadata", layoutRail);
+// Sur petit écran, les réglages sont repliés pour laisser la place à la vidéo.
+if (matchMedia("(max-width: 560px)").matches) $("settings").open = false;
+
+applyControls();
