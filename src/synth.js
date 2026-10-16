@@ -71,6 +71,49 @@ export function makeImpulse(ctx, seconds) {
   return buf;
 }
 
+/**
+ * iOS : par défaut, le son Web Audio est traité comme un son « d'ambiance » et il
+ * est COUPÉ quand l'iPhone est en mode silencieux (interrupteur latéral ou bouton
+ * Action). On demande une session de lecture, comme une app de musique.
+ * - Safari 16.4+ : API navigator.audioSession.
+ * - Plus ancien : un élément <audio> silencieux joué en boucle force la même
+ *   catégorie de session.
+ */
+let silentAudio = null;
+export function useSpeakerSession() {
+  if (navigator.audioSession) {
+    try {
+      navigator.audioSession.type = "playback";
+    } catch {
+      /* ignoré */
+    }
+    return;
+  }
+  if (!/iPad|iPhone|iPod/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent))) return;
+  if (!silentAudio) {
+    silentAudio = document.createElement("audio");
+    silentAudio.src = URL.createObjectURL(silentWav());
+    silentAudio.loop = true;
+    silentAudio.setAttribute("playsinline", "");
+    silentAudio.setAttribute("x-webkit-airplay", "deny");
+  }
+  silentAudio.play().catch(() => {});
+}
+
+/** WAV de 0,5 s de silence (8 kHz, 8 bits, mono). */
+function silentWav() {
+  const n = 4000;
+  const buf = new ArrayBuffer(44 + n);
+  const v = new DataView(buf);
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
+  new Uint8Array(buf, 44).fill(128); // 128 = zéro en PCM 8 bits non signé
+  return new Blob([buf], { type: "audio/wav" });
+}
+
 export class Synth {
   ctx = null;
   #oscs = [];
@@ -87,10 +130,71 @@ export class Synth {
   #muted = false;
   #freq = 0;
 
-  /** Crée l'AudioContext ; à appeler depuis un geste utilisateur (autoplay). */
+  #stateListeners = new Set();
+
+  /**
+   * Crée et débloque l'audio. À appeler AU DÉBUT d'un geste utilisateur (clic),
+   * avant tout `await` : iOS n'autorise l'audio que pendant le geste.
+   */
   async start() {
-    if (!this.ctx) this.attach(new AudioContext({ latencyHint: "interactive" }));
-    return this.ctx.resume?.();
+    useSpeakerSession();
+    if (!this.ctx) {
+      const Ctx = window.AudioContext ?? window.webkitAudioContext;
+      this.attach(new Ctx({ latencyHint: "interactive" }));
+      this.#watch();
+    }
+    // iOS : jouer un buffer silencieux dans le geste « réveille » la sortie audio.
+    const blip = this.ctx.createBufferSource();
+    blip.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+    blip.connect(this.ctx.destination);
+    blip.start();
+    return this.resume();
+  }
+
+  /** Relance l'audio s'il a été suspendu ou interrompu (appel, caméra, onglet en arrière-plan…). */
+  async resume() {
+    if (!this.ctx || this.ctx.state === "running" || this.ctx.state === "closed") return this.running;
+    try {
+      await this.ctx.resume();
+    } catch {
+      /* refusé hors geste : un toucher suivant réessaiera */
+    }
+    return this.running;
+  }
+
+  get running() {
+    return this.ctx?.state === "running";
+  }
+
+  /** Prévient l'interface quand l'audio passe en marche ou s'arrête. */
+  onStateChange(cb) {
+    this.#stateListeners.add(cb);
+  }
+
+  /**
+   * Safari iOS met le contexte en état « interrupted » ou « suspended » quand la
+   * caméra démarre, après un appel, ou au retour d'arrière-plan. On tente une
+   * relance à chaque changement, et à chaque toucher de l'écran (un geste suffit
+   * toujours).
+   */
+  #watch() {
+    const ctx = this.ctx;
+    ctx.addEventListener("statechange", () => {
+      for (const cb of this.#stateListeners) cb(ctx.state);
+      if (ctx.state !== "running" && !document.hidden) this.resume();
+    });
+    const wake = () => {
+      if (ctx.state !== "running") {
+        useSpeakerSession();
+        this.resume();
+      }
+    };
+    for (const type of ["pointerdown", "touchend", "keydown"]) {
+      document.addEventListener(type, wake, { capture: true, passive: true });
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) this.resume();
+    });
   }
 
   /** Construit le graphe dans un contexte donné (AudioContext ou OfflineAudioContext). */

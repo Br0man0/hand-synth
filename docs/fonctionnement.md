@@ -325,6 +325,8 @@ Le détail visuel (matériau verre, tokens, composants) est dans le
 | Pas de `backdrop-filter`, ou transparence réduite demandée | Le verre devient presque opaque |
 | `prefers-reduced-motion` | Les transitions sont coupées |
 | Pas de GPU utilisable | MediaPipe passe sur le CPU |
+| Audio suspendu ou interrompu (Safari iOS : caméra, appel, arrière-plan) | Relance automatique à chaque changement d'état et au premier toucher. Sinon, le bouton « Touche ici pour activer le son » s'affiche. |
+| iPhone en mode silencieux | Session audio de **lecture** demandée au démarrage (`navigator.audioSession`, ou élément audio silencieux sur les iOS plus anciens), pour que le son ne soit pas coupé |
 
 ## 10. Latence
 

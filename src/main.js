@@ -15,6 +15,7 @@ const el = {
   ledLeft: $("led-left"), ledRight: $("led-right"),
   keys: $("keys"), mute: $("mute"),
   settings: $("settings"), settingsToggle: $("settings-toggle"),
+  unlock: $("sound-unlock"),
 };
 
 const css = getComputedStyle(document.documentElement);
@@ -69,6 +70,10 @@ el.start.addEventListener("click", async () => {
     el.start.textContent = "Chargement du suivi des mains…";
     state.landmarker ??= await createHandTracker();
     el.app.dataset.state = "playing";
+    // iOS suspend souvent l'audio quand la caméra démarre : on relance, sinon on
+    // affiche un bouton (un toucher est le seul moyen sûr de le réactiver).
+    await synth.resume();
+    updateUnlock();
     announce("Prêt. Choisis une note avec la main droite, ferme le poing gauche pour la jouer.");
     if (!state.running) {
       state.running = true;
@@ -235,6 +240,17 @@ function onCameraLost() {
 // Onglet masqué : requestAnimationFrame s'arrête, on relâche la note.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) releaseAll();
+});
+
+// ---------- Audio suspendu (iOS) ----------
+
+function updateUnlock() {
+  el.unlock.hidden = synth.running || el.app.dataset.state !== "playing";
+}
+synth.onStateChange(updateUnlock);
+el.unlock.addEventListener("click", async () => {
+  await synth.start(); // dans le geste : réactive la session et le contexte
+  updateUnlock();
 });
 
 // ---------- Contrôles ----------

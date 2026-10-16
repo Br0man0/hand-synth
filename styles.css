@@ -391,6 +391,32 @@ button {
   display: block;
 }
 
+/* ---------- Bouton « activer le son » (iOS : audio suspendu) ---------- */
+
+.unlock {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--edge) + 68px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 48px;
+  padding: 0 22px 0 18px;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--graphite);
+  background: var(--hand-right);
+  border-color: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.unlock[hidden] {
+  display: none;
+}
+
 /* ---------- Feuille de réglages ---------- */
 
 .sheet {

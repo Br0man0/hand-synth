@@ -40,6 +40,15 @@ erreurs de démarrage y sont détaillées.
 | Trop fort ou saturé avec la distorsion | Baisse `PATCH.drive.wetLevel` (0.45 → 0.35) ou `PATCH.masterGain`. |
 | Latence perçue | Le poing est le déclencheur le plus rapide : choisis la note avant de frapper. Un casque filaire évite la latence Bluetooth (souvent plus de 150 ms). |
 
+### iPhone et iPad (Safari)
+
+| Symptôme | Cause | Ce que fait l'appli / ce que tu peux faire |
+|---|---|---|
+| Aucun son, alors que tout s'affiche | **Mode silencieux** (interrupteur latéral ou bouton Action) : iOS coupe le son Web Audio des pages comme un son « d'ambiance » | L'appli demande une session de **lecture** (`navigator.audioSession.type = "playback"` sur iOS 16.4+, élément audio silencieux en boucle avant). Si ça ne suffit pas sur ta version d'iOS, désactive le mode silencieux. |
+| Le son ne démarre pas, ou s'arrête après l'ouverture de la caméra, un appel ou un retour d'arrière-plan | Safari met l'audio en pause (`suspended` ou `interrupted`) et refuse de le relancer sans un toucher | Un bouton jaune **« Touche ici pour activer le son »** apparaît : touche-le. N'importe quel toucher sur l'écran relance aussi l'audio. |
+| Son très faible | Volume média de l'iPhone bas, ou main gauche trop basse | Monte le volume avec les boutons latéraux pendant que la page est ouverte. Lève la main gauche. |
+| Son dans l'écouteur du haut au lieu du haut-parleur | Session audio « appel » imposée par une autre app (visio en cours…) | Ferme l'autre app, puis recharge la page. |
+
 ## Affichage
 
 | Symptôme | Solution |
